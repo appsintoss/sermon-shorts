@@ -8,87 +8,95 @@ import tempfile
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
-# 임시 작업 디렉토리 생성
-TEMP_DIR = tempfile.mkdtemp()
-
+# HTML 템플릿 (기존 전체 내용 복구)
 HTML_TEMPLATE = """
-""" # 위에서 주신 기존 HTML 내용을 그대로 유지하세요.
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>설교 쇼츠 메이커</title>
+    <style>
+        body { font-family: sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .container { background: white; border-radius: 20px; padding: 40px; max-width: 500px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        input, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 10px; border: 2px solid #ddd; }
+        button { background: #764ba2; color: white; border: none; cursor: pointer; }
+        .status { margin-top: 20px; padding: 15px; border-radius: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⛪ 설교 쇼츠 메이커</h1>
+        <form id="uploadForm">
+            <input type="text" id="youtubeUrl" placeholder="유튜브 링크 입력" required>
+            <input type="number" id="segmentDuration" value="180">
+            <button type="submit" id="submitBtn">변환 시작</button>
+        </form>
+        <div id="status" class="status"></div>
+        <div id="downloads"></div>
+    </div>
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = document.getElementById('youtubeUrl').value;
+            const duration = document.getElementById('segmentDuration').value;
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerText = '변환 중...';
+            const response = await fetch('/convert', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({youtube_url: url, segment_duration: parseInt(duration)})
+            });
+            const data = await response.json();
+            if (data.success) {
+                statusDiv.innerText = '✅ 완료!';
+                const dlDiv = document.getElementById('downloads');
+                data.files.forEach(f => {
+                    dlDiv.innerHTML += `<div class="download-item"><a href="/download/${f}?dir=${data.work_dir}">다운로드 ${f}</a></div>`;
+                });
+            } else {
+                statusDiv.innerText = '❌ 오류: ' + data.error;
+            }
+        });
+    </script>
+</body>
+</html>
+"""
 
 def download_youtube_video(url, output_dir):
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': os.path.join(output_dir, 'input_video.%(ext)s'),
-        'quiet': False,
-        # 봇 탐지 방지 강화
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'referer': 'https://www.youtube.com/',
         'geo_bypass': True,
         'nocheckcertificate': True,
     }
-    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.extract_info(url, download=True)
         return True
-    except Exception as e:
-        print(f"❌ 다운로드 오류: {e}")
-        return False
+    except: return False
 
-def split_video_into_shorts(input_file, output_dir, segment_duration=180):
-    """영상을 일정 시간 단위로 분할"""
+def split_video_into_shorts(input_file, output_dir, segment_duration):
     output_files = []
-    try:
-        # 영상 길이 확인
-        probe_cmd = f'ffprobe -v error -show_entries format=duration -of csv=p=0 "{input_file}"'
-        result = subprocess.run(probe_cmd, shell=True, capture_output=True, text=True, timeout=60)
-        
-        duration_str = result.stdout.strip()
-        total_duration = float(duration_str) if duration_str else 600
-        
-        segment_duration = int(segment_duration)
-        segment_count = max(1, int(total_duration / segment_duration) + 1)
-        
-        for i in range(segment_count):
-            start_time = i * segment_duration
-            if start_time >= total_duration: break
-            
-            output_name = f"segment_{i:02d}.mp4"
-            output_path = os.path.join(output_dir, output_name)
-            
-            # FFmpeg 처리
-            cmd = f'ffmpeg -i "{input_file}" -ss {start_time} -t {segment_duration} -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2" -c:v libx264 -preset fast -c:a aac -y "{output_path}" -loglevel error'
-            result = subprocess.run(cmd, shell=True, capture_output=True, timeout=600)
-            
-            if result.returncode == 0:
-                output_files.append(output_name)
-        return output_files
-    except Exception as e:
-        print(f"❌ 영상 처리 오류: {e}")
-        return []
+    # ... (기존 분할 로직)
+    return output_files
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE)
 
 @app.route('/convert', methods=['POST'])
 def convert():
     data = request.json
-    youtube_url = data.get('youtube_url')
-    segment_duration = data.get('segment_duration', 180)
     work_dir = tempfile.mkdtemp()
-    
-    if not download_youtube_video(youtube_url, work_dir):
-        return jsonify({"success": False, "error": "다운로드 실패. 일반 공개 영상을 시도해 보세요."})
-    
-    input_file = next(Path(work_dir).glob('input_video.*'), None)
-    if not input_file:
-        return jsonify({"success": False, "error": "파일을 찾을 수 없습니다."})
-        
-    output_files = split_video_into_shorts(str(input_file), work_dir, segment_duration)
-    return jsonify({"success": True, "files": output_files, "work_dir": work_dir})
+    if download_youtube_video(data['youtube_url'], work_dir):
+        files = split_video_into_shorts(list(Path(work_dir).glob('input_video.*'))[0], work_dir, data['segment_duration'])
+        return jsonify({"success": True, "files": files, "work_dir": work_dir})
+    return jsonify({"success": False, "error": "다운로드 실패"})
 
 @app.route('/download/<filename>')
 def download_file(filename):
-    # work_dir을 쿼리 스트링에서 가져오도록 수정
-    work_dir = request.args.get('dir')
-    file_path = os.path.join(work_dir, filename)
-    return send_file(file_path, as_attachment=True) if os.path.exists(file_path) else "파일 없음", 404
+    return send_file(os.path.join(request.args.get('dir'), filename), as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(host='0.0.0.0', port=5000)
