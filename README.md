@@ -28,7 +28,7 @@ python app.py
 이 프로젝트는 render에서 무료로 호스팅할 수 있습니다.
 
 1. GitHub에 푸시
-2. Vercel 연결
+2. render 연결
 3. 자동 배포 완료
 
 ## 필수 라이브러리
