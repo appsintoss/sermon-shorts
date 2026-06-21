@@ -16,4 +16,4 @@ COPY app.py .
 EXPOSE 5000
 
 # 실행
-CMD ["python", "app.py"]
+CMD ["gunicorn", "--timeout", "600", "--workers", "1", "app:app"]
