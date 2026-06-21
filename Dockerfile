@@ -15,5 +15,8 @@ COPY app.py .
 # 포트
 EXPOSE 5000
 
+# 기존 내용은 유지하시고, 마지막 CMD 전에 아래 내용을 추가하세요
+RUN pip install -U yt-dlp
+
 # 실행
 CMD ["gunicorn", "--timeout", "600", "--workers", "1", "app:app"]
