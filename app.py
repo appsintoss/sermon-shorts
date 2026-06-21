@@ -15,16 +15,15 @@ HTML_TEMPLATE = """
 """ # 위에서 주신 기존 HTML 내용을 그대로 유지하세요.
 
 def download_youtube_video(url, output_dir):
-    """유튜브 영상 다운로드 (우회 옵션 강화)"""
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': os.path.join(output_dir, 'input_video.%(ext)s'),
         'quiet': False,
-        # 봇 탐지 방지 옵션들
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        # 봇 탐지 방지 강화
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'referer': 'https://www.youtube.com/',
         'geo_bypass': True,
         'nocheckcertificate': True,
-        'socket_timeout': 60,
     }
     
     try:
