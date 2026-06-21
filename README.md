@@ -25,7 +25,7 @@ python app.py
 
 ## 배포 (Vercel)
 
-이 프로젝트는 Vercel에서 무료로 호스팅할 수 있습니다.
+이 프로젝트는 render에서 무료로 호스팅할 수 있습니다.
 
 1. GitHub에 푸시
 2. Vercel 연결
