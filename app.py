@@ -239,14 +239,19 @@ HTML_TEMPLATE = """
 def download_youtube_video(url, output_dir):
     """유튜브 영상 다운로드"""
     ydl_opts = {
-        'format': 'best[ext=mp4]',
+        'format': 'best[ext=mp4]/best',
         'outtmpl': os.path.join(output_dir, 'input_video.%(ext)s'),
         'quiet': False,
+        'no_warnings': False,
+        'socket_timeout': 30,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+            info = ydl.extract_info(url, download=True)
         return True
     except Exception as e:
         print(f"❌ 다운로드 오류: {e}")
