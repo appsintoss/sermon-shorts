@@ -8,25 +8,27 @@ import yt_dlp
 import whisper
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024 # 500MB 제한
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 
-# Whisper 모델 로드 (처음 한 번만)
 WHISPER_MODEL = None
 
 def get_whisper_model():
     global WHISPER_MODEL
     if WHISPER_MODEL is None:
-        print("🎵 Whisper 모델 로딩 중...")
-        WHISPER_MODEL = whisper.load_model("base", device="cpu")
+        try:
+            print("🎵 Whisper 모델 로딩 중...")
+            WHISPER_MODEL = whisper.load_model("base", device="cpu")
+        except Exception as e:
+            print(f"⚠️ Whisper 로드 실패: {e}")
+            return None
     return WHISPER_MODEL
 
 def find_korean_font():
-    """한국어 폰트 찾기"""
     possible_fonts = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttf",
-        "/System/Library/Fonts/PingFang.ttc",  # macOS
-        "C:\\Windows\\Fonts\\arial.ttf",  # Windows
+        "/System/Library/Fonts/PingFang.ttc",
+        "C:\\Windows\\Fonts\\arial.ttf",
     ]
     for font_path in possible_fonts:
         if os.path.exists(font_path):
@@ -36,25 +38,28 @@ def find_korean_font():
     return None
 
 def extract_subtitles(audio_path, output_dir):
-    """Whisper로 자막 추출"""
-    print(f"🎙️  Whisper로 자막 추출 중... ({audio_path})")
-    model = get_whisper_model()
-    result = model.transcribe(audio_path, language="ko")
-    
-    # SRT 형식으로 변환
-    srt_path = os.path.join(output_dir, "subtitles.srt")
-    with open(srt_path, 'w', encoding='utf-8') as f:
-        for idx, segment in enumerate(result['segments'], 1):
-            start = format_timestamp(segment['start'])
-            end = format_timestamp(segment['end'])
-            text = segment['text']
-            f.write(f"{idx}\n{start} --> {end}\n{text}\n\n")
-    
-    print(f"✅ 자막 생성 완료: {srt_path}")
-    return srt_path
+    try:
+        print(f"🎙️  Whisper로 자막 추출 중...")
+        model = get_whisper_model()
+        if model is None:
+            return None
+        result = model.transcribe(audio_path, language="ko")
+        
+        srt_path = os.path.join(output_dir, "subtitles.srt")
+        with open(srt_path, 'w', encoding='utf-8') as f:
+            for idx, segment in enumerate(result['segments'], 1):
+                start = format_timestamp(segment['start'])
+                end = format_timestamp(segment['end'])
+                text = segment['text']
+                f.write(f"{idx}\n{start} --> {end}\n{text}\n\n")
+        
+        print(f"✅ 자막 생성 완료: {srt_path}")
+        return srt_path
+    except Exception as e:
+        print(f"⚠️  자막 생성 실패: {e}")
+        return None
 
 def format_timestamp(seconds):
-    """초를 SRT 형식(HH:MM:SS,mmm)으로 변환"""
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
@@ -62,33 +67,35 @@ def format_timestamp(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 def add_subtitles_to_video(input_video, subtitle_file, output_video, font_path=None):
-    """비디오에 자막 추가"""
-    print(f"📝 자막 추가 중... ({output_video})")
-    
-    if font_path:
-        # 폰트 경로를 escaping (Windows 경로 대비)
-        font_path = font_path.replace('\\', '/')
-        subtitle_filter = f"subtitles={subtitle_file}:fontfile={font_path}:fontsize=24:font_color=white:borderw=2:bordercolor=black"
-    else:
-        subtitle_filter = f"subtitles={subtitle_file}:fontsize=24:font_color=white"
-    
-    cmd = [
-        'ffmpeg', '-i', input_video,
-        '-vf', subtitle_filter,
-        '-c:a', 'aac',
-        '-c:v', 'libx264',
-        '-preset', 'fast',
-        '-y',
-        output_video
-    ]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    if result.returncode != 0:
-        print(f"❌ 자막 추가 오류: {result.stderr}")
-        raise Exception(f"ffmpeg 오류: {result.stderr}")
-    
-    print(f"✅ 자막 추가 완료: {output_video}")
-    return output_video
+    try:
+        print(f"📝 자막 추가 중... ({output_video})")
+        
+        if font_path:
+            font_path = font_path.replace('\\', '/')
+            subtitle_filter = f"subtitles={subtitle_file}:fontfile={font_path}:fontsize=24:font_color=white:borderw=2:bordercolor=black"
+        else:
+            subtitle_filter = f"subtitles={subtitle_file}:fontsize=24:font_color=white"
+        
+        cmd = [
+            'ffmpeg', '-i', input_video,
+            '-vf', subtitle_filter,
+            '-c:a', 'aac',
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-y',
+            output_video
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            print(f"❌ 자막 추가 오류: {result.stderr}")
+            return None
+        
+        print(f"✅ 자막 추가 완료: {output_video}")
+        return output_video
+    except Exception as e:
+        print(f"⚠️  자막 추가 실패: {e}")
+        return None
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -326,10 +333,8 @@ HTML_TEMPLATE = """
 """
 
 def split_video(input_file, output_dir, segment_duration, add_subs=True):
-    """비디오 분할 및 자막 추가"""
     files = []
     
-    # 1단계: 오디오 추출 (자막 생성용)
     audio_path = os.path.join(output_dir, "audio.wav")
     print(f"🎵 오디오 추출 중...")
     cmd_audio = [
@@ -337,9 +342,8 @@ def split_video(input_file, output_dir, segment_duration, add_subs=True):
         '-q:a', '9', '-n',
         audio_path
     ]
-    subprocess.run(cmd_audio, capture_output=True, timeout=120)
+    subprocess.run(cmd_audio, capture_output=True, timeout=300)
     
-    # 2단계: Whisper로 자막 생성
     subtitle_file = None
     font_path = None
     if add_subs:
@@ -350,7 +354,6 @@ def split_video(input_file, output_dir, segment_duration, add_subs=True):
             print(f"⚠️  자막 생성 실패: {e}")
             subtitle_file = None
     
-    # 3단계: 비디오 분할
     print(f"✂️  비디오 분할 중 ({segment_duration}초)...")
     cmd = [
         'ffmpeg', '-i', input_file,
@@ -361,30 +364,30 @@ def split_video(input_file, output_dir, segment_duration, add_subs=True):
         '-y',
         os.path.join(output_dir, "segment_%03d.mp4")
     ]
-    subprocess.run(cmd, capture_output=True, timeout=300)
+    subprocess.run(cmd, capture_output=True, timeout=600)
     
-    # 4단계: 각 세그먼트에 자막 추가
     for f in sorted(Path(output_dir).glob("segment_*.mp4")):
         if subtitle_file and os.path.exists(subtitle_file):
             output_with_subs = os.path.join(output_dir, f"sub_{f.name}")
-            try:
-                add_subtitles_to_video(str(f), subtitle_file, output_with_subs, font_path)
-                os.remove(f)  # 원본 삭제
-                os.rename(output_with_subs, f)
-                print(f"✅ 자막 추가됨: {f.name}")
-            except Exception as e:
-                print(f"⚠️  자막 추가 실패 ({f.name}): {e}")
+            result = add_subtitles_to_video(str(f), subtitle_file, output_with_subs, font_path)
+            if result:
+                try:
+                    os.remove(f)
+                    os.rename(output_with_subs, f)
+                    print(f"✅ 자막 추가됨: {f.name}")
+                except Exception as e:
+                    print(f"⚠️  파일 처리 오류: {e}")
         
         files.append(f.name)
     
-    # 정리
     if os.path.exists(audio_path):
         os.remove(audio_path)
     
     return files
 
 @app.route('/')
-def index(): return render_template_string(HTML_TEMPLATE)
+def index(): 
+    return render_template_string(HTML_TEMPLATE)
 
 @app.route('/convert', methods=['POST'])
 def convert():
@@ -417,6 +420,9 @@ def upload():
         return jsonify({"success": False, "error": str(e)})
 
 @app.route('/download/<filename>')
-def download(filename): return send_file(os.path.join(request.args.get('dir'), filename), as_attachment=True)
+def download(filename): 
+    return send_file(os.path.join(request.args.get('dir'), filename), as_attachment=True)
 
-if __name__ == '__main__': app.run(host='0.0.0.0', port=5000)
+if __name__ == '__main__': 
+    app.run(host='0.0.0.0', port=5000)
+
